@@ -7,5 +7,7 @@ edition = "2021"
 
 [dependencies]
 pallas-codec = { path = "../pallas-codec" }
+pallas-crypto = { path = "../pallas-crypto" }
 pallas-primitives = { path = "../pallas-primitives" }
 pallas-traverse = { path = "../pallas-traverse" }
+rand = "0.8"
