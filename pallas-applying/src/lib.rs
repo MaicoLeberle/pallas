@@ -2,9 +2,7 @@ use std::error::Error;
 use std::vec::Vec;
 
 use pallas_primitives::byron::{
-    EpochId,
     Tx,
-    TxFeePol,
     TxOut,
     Witnesses
 };
