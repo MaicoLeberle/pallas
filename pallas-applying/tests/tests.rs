@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::vec::Vec;
 use rand::Rng;
 
-use pallas_applying::{ProtocolParams, validate_byron_tx, ValidationError, UTxOs};
+use pallas_applying::{ProtocolParams, to_utxo_tx_in, validate_byron_tx, ValidationError, UTxOs};
 use pallas_codec::{minicbor::bytes::ByteVec, utils::{CborWrap, EmptyMap, MaybeIndefArray, TagWrap}};
 use pallas_crypto::hash::Hash;
 use pallas_primitives::byron::{Address, Attributes, Twit, Tx, TxId, TxIn, TxOut};
@@ -11,6 +10,34 @@ use pallas_primitives::byron::{Address, Attributes, Twit, Tx, TxId, TxIn, TxOut}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn successful_case() {
+        let mut tx_ins: TxIns = new_tx_ins();
+        let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
+        insert_tx_in(&mut tx_ins, &tx_in);
+        let mut tx_outs: TxOuts = new_tx_outs();
+        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 1000);
+        insert_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = mk_transaction(
+            tx_ins,
+            tx_outs,
+            new_attributes()
+        );
+        let tx_wits: Witnesses = new_witnesses();
+        let mut utxos: UTxOs = new_utxos();
+        insert_utxo(
+            &mut utxos,
+            &tx_in,
+            new_tx_out(new_address(random_address_payload(), 0), 1000)
+        );
+        let protocol_params: ProtocolParams = new_protocol_params();
+
+        match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
+            Ok(_)    => (),
+            Err(err) => assert!(false, "ERROR: {:?}", err),
+            }
+    }
 
     #[test]
     fn empty_ins() {
@@ -26,31 +53,9 @@ mod tests {
         match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
             Ok(_) => assert!(false, "Inputs set cannot be empty."),
             Err(err) => match err {
-                ValidationError::TxInsEmpty(_) => (),
-                _                              => assert!(false, "Wrong error type (empty_ins)."),
-            }
-        }
-    }
-
-    #[test]
-    fn non_empty_ins() {
-        let mut tx_ins: TxIns = new_tx_ins();
-        insert_tx_in(&mut tx_ins, new_tx_in(random_tx_id(), 0));
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            new_tx_outs(),
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
-        let utxos: UTxOs = new_utxos();
-        let protocol_params: ProtocolParams = new_protocol_params();
-
-        match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
-            Ok(_)    => assert!(true),
-            Err(err) => match err {
-                ValidationError::TxInsEmpty(_) =>
-                    assert!(false, "Non-empty set of inputs but still failed."),
-                _                              => assert!(true)
+                ValidationError::TxInsEmpty => (),
+                wrong_error                 =>
+                    assert!(false, "Wrong error type (empty_ins - {:?}).", wrong_error),
             }
         }
     }
@@ -58,31 +63,40 @@ mod tests {
     #[test]
     fn empty_outs() {
         let mut tx_ins: TxIns = new_tx_ins();
-        insert_tx_in(&mut tx_ins, new_tx_in(random_tx_id(), 0));
+        let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
+        insert_tx_in(&mut tx_ins, &tx_in);
         let tx: Tx = mk_transaction(
             tx_ins,
             new_tx_outs(),
             new_attributes()
         );
         let tx_wits: Witnesses = new_witnesses();
-        let utxos: UTxOs = new_utxos();
+        let mut utxos: UTxOs = new_utxos();
+        insert_utxo(
+            &mut utxos,
+            &tx_in,
+            new_tx_out(new_address(random_address_payload(), 0), 1000)
+        );
         let protocol_params: ProtocolParams = new_protocol_params();
 
         match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
             Ok(_) => assert!(false, "Outputs set cannot be empty."),
             Err(err) => match err {
-                ValidationError::TxOutsEmpty(_) => (),
-                _                               => assert!(false, "Wrong error type (empty_outs)."),
+                ValidationError::TxOutsEmpty => (),
+                wrong_error                  =>
+                    assert!(false, "Wrong error type (empty_outs - {:?}).", wrong_error),
             }
         }
     }
 
     #[test]
-    fn non_empty_outs() {
+    fn unfound_utxo() {
         let mut tx_ins: TxIns = new_tx_ins();
-        insert_tx_in(&mut tx_ins, new_tx_in(random_tx_id(), 0));
+        let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
+        insert_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
-        insert_tx_out(&mut tx_outs, new_tx_out(new_address(random_address_payload(), 0), 1000));
+        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 1000);
+        insert_tx_out(&mut tx_outs, &tx_out);
         let tx: Tx = mk_transaction(
             tx_ins,
             tx_outs,
@@ -93,11 +107,11 @@ mod tests {
         let protocol_params: ProtocolParams = new_protocol_params();
 
         match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
-            Ok(_)    => assert!(true),
+            Ok(_)    => assert!(false, "Input must be in the set of UTxOs."),
             Err(err) => match err {
-                ValidationError::TxOutsEmpty(_) =>
-                    assert!(false, "Non-empty set of outputs but still failed."),
-                _                              => assert!(true)
+                ValidationError::InputMissingFromUTxO => (),
+                wrong_error                           =>
+                    assert!(false, "Wrong error type (unfound_utxo - {:?}).", wrong_error),
             }
         }
     }
@@ -126,9 +140,9 @@ fn new_tx_in(tx_id: TxId, index: u32) -> TxIn {
     TxIn::Variant0(CborWrap((tx_id, index)))
 }
 
-fn insert_tx_in(ins: &mut TxIns, new_in: TxIn) {
+fn insert_tx_in(ins: &mut TxIns, new_in: &TxIn) {
     match ins {
-        MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_in)
+        MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_in.clone())
     }
 }
 
@@ -159,9 +173,16 @@ fn new_tx_out(address: Address, amount: u64) -> TxOut {
     }
 }
 
-fn insert_tx_out(outs: &mut TxOuts, new_out: TxOut) {
+fn insert_tx_out(outs: &mut TxOuts, new_out: &TxOut) {
     match outs {
-        MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_out)
+        MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_out.clone())
+    }
+}
+
+fn insert_utxo(utxos: &mut UTxOs, tx_in: &TxIn, tx_out: TxOut) -> Option<TxOut> {
+    match to_utxo_tx_in(tx_in) {
+        Some(utxo_tx_in) => utxos.insert(utxo_tx_in, tx_out),
+        None => None
     }
 }
 
@@ -182,7 +203,7 @@ fn new_witnesses() -> Witnesses {
 }
 
 fn new_utxos() -> UTxOs {
-    HashMap::<TxIn, TxOut>::new()
+    UTxOs::new()
 }
 
 fn new_protocol_params() -> ProtocolParams {
