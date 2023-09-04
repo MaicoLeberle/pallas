@@ -26,6 +26,7 @@ pub enum ValidationError {
     TxOutsEmpty,
     InputMissingFromUTxO,
     IllFormedInput,
+    OutputWithoutLovelace,
 }
 
 pub type ValidationResult = Result<(), ValidationError>;
@@ -121,7 +122,12 @@ pub fn check_outs_not_empty(tx: &Tx) -> ValidationResult {
 }
 
 // All transaction outputs contain a non-zero number of lovelace.
-pub fn check_outputs_not_zero_lovelace(_tx: &Tx) -> ValidationResult {
+pub fn check_outputs_not_zero_lovelace(tx: &Tx) -> ValidationResult {
+    for output in tx.outputs.iter() {
+        if output.amount == 0 {
+            return err_result(ValidationError::OutputWithoutLovelace)
+        }
+    }
     Ok(())
 }
 

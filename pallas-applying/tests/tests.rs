@@ -115,6 +115,38 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn no_lovelace_in_output() {
+        let mut tx_ins: TxIns = new_tx_ins();
+        let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
+        insert_tx_in(&mut tx_ins, &tx_in);
+        let mut tx_outs: TxOuts = new_tx_outs();
+        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 0);
+        insert_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = mk_transaction(
+            tx_ins,
+            tx_outs,
+            new_attributes()
+        );
+        let tx_wits: Witnesses = new_witnesses();
+        let mut utxos: UTxOs = new_utxos();
+        insert_utxo(
+            &mut utxos,
+            &tx_in,
+            new_tx_out(new_address(random_address_payload(), 0), 1000)
+        );
+        let protocol_params: ProtocolParams = new_protocol_params();
+
+        match validate_byron_tx(&tx, &tx_wits, &utxos, protocol_params) {
+            Ok(_)    => assert!(false, "All outputs must have a non-zero number of lovelaces."),
+            Err(err) => match err {
+                ValidationError::OutputWithoutLovelace => (),
+                wrong_error                            =>
+                    assert!(false, "Wrong error type (unfound_utxo - {:?}).", wrong_error),
+            }
+        }
+    }
 }
 
 // Helper types.
