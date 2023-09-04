@@ -1,7 +1,8 @@
-use std::vec::Vec;
+use std::collections::HashMap;
 
 use pallas_primitives::byron::{
     Tx,
+    TxIn,
     TxOut,
     Witnesses
 };
@@ -11,6 +12,7 @@ use pallas_traverse::{
     MultiEraTx::AlonzoCompatible as AlonzoCompatible,
     MultiEraTx::Babbage as Babbage
 };
+
 
 pub struct ProtocolParams;
 
@@ -26,10 +28,12 @@ pub fn err_result(validation_error: ValidationError) -> ValidationResult {
     Err(validation_error)
 }
 
+pub type UTxOs = HashMap<TxIn, TxOut>;
+
 pub fn validate(
     tx: &MultiEraTx,
     witnesses: &Witnesses,
-    utxos: &Vec<TxOut>,
+    utxos: &UTxOs,
     prot_params: ProtocolParams
 ) -> ValidationResult {
     match tx {
@@ -48,7 +52,7 @@ pub fn validate(
 pub fn validate_byron_tx(
     tx: &Tx,
     witnesses: &Witnesses,
-    utxos: &Vec<TxOut>,
+    utxos: &UTxOs,
     protocol_params: ProtocolParams
 ) -> ValidationResult {
     validate_ins_not_empty(&tx)?;
@@ -71,7 +75,7 @@ pub fn validate_ins_not_empty(tx: &Tx) -> ValidationResult {
 }
 
 // All transaction inputs are in the set of UTxO's.
-pub fn validate_ins_in_utxos(_tx: &Tx, _utxos: &Vec<TxOut>) -> ValidationResult {
+pub fn validate_ins_in_utxos(_tx: &Tx, _utxos: &UTxOs) -> ValidationResult {
     Ok(())
 
 }

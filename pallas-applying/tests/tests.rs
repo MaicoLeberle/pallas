@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::vec::Vec;
 use rand::Rng;
 
-use pallas_applying::{ProtocolParams, validate_byron_tx, ValidationError};
+use pallas_applying::{ProtocolParams, validate_byron_tx, ValidationError, UTxOs};
 use pallas_codec::{minicbor::bytes::ByteVec, utils::{CborWrap, EmptyMap, MaybeIndefArray, TagWrap}};
 use pallas_crypto::hash::Hash;
 use pallas_primitives::byron::{Address, Attributes, Twit, Tx, TxId, TxIn, TxOut};
@@ -106,7 +107,6 @@ mod tests {
 type TxIns = MaybeIndefArray<TxIn>;
 type TxOuts = MaybeIndefArray<TxOut>;
 type Witnesses = MaybeIndefArray<Twit>;
-type UTxOs = Vec<TxOut>;
 
 // Helper functions.
 fn new_tx_ins() -> TxIns {
@@ -182,7 +182,7 @@ fn new_witnesses() -> Witnesses {
 }
 
 fn new_utxos() -> UTxOs {
-    Vec::new()
+    HashMap::<TxIn, TxOut>::new()
 }
 
 fn new_protocol_params() -> ProtocolParams {
