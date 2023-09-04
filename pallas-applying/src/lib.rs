@@ -17,6 +17,7 @@ pub struct ProtocolParams;
 pub enum ValidationError {
     UnsupportedEra(String),
     TxInsEmpty(String),
+    TxOutsEmpty(String)
 }
 
 pub type ValidationResult = Result<(), ValidationError>;
@@ -76,8 +77,12 @@ pub fn validate_ins_in_utxos(_tx: &Tx, _utxos: &Vec<TxOut>) -> ValidationResult 
 }
 
 // The set of transaction outputs is not empty.
-pub fn validate_outs_not_empty(_tx: &Tx) -> ValidationResult {
-    Ok(())
+pub fn validate_outs_not_empty(tx: &Tx) -> ValidationResult {
+    if tx.clone().outputs.to_vec().len() == 0 {
+        err_result(ValidationError::TxOutsEmpty("Outputs set cannot be empty.".to_string()))
+    } else {
+        Ok(())
+    }
 }
 
 // All transaction outputs contain a non-zero number of lovelace.
