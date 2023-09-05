@@ -35,8 +35,9 @@ pub enum ValidationError {
     InputNotUTxO,
     IllFormedInput,
     OutputWithoutLovelace,
-    WrongFees,
+    WrongFees(u64, u64),
     FeesBelowMin,
+    MaxTxSizeExceeded(u64, u64),
 }
 
 pub type ValidationResult = Result<(), ValidationError>;
@@ -94,7 +95,7 @@ pub fn validate(
         Byron(mtxp) => {
             match annotate_tx(&*(mtxp.transaction)) {
                 None => err_result(ValidationError::TxSizeUnavailable),
-                Some(atx) => validate_byron_tx(&atx, witnesses, utxos, prot_params)
+                Some(atx) => validate_byron_tx(&atx, witnesses, utxos, &prot_params)
             }
         },
         AlonzoCompatible(_, _) => err_result(
@@ -112,7 +113,7 @@ pub fn validate_byron_tx(
     atx: &AnnotatedTx,
     witnesses: &Witnesses,
     utxos: &UTxOs,
-    protocol_params: ProtocolParams
+    protocol_params: &ProtocolParams
 ) -> ValidationResult {
     check_ins_not_empty(&atx.tx)?;
     check_ins_in_utxos(&atx.tx, &utxos)?;
@@ -189,7 +190,7 @@ fn check_fees(
         protocol_params.minimum_fee_constant + protocol_params.minimum_fee_factor * atx.tx_size;
 
     if paid_fees != computed_fees {
-        err_result(ValidationError::WrongFees)
+        err_result(ValidationError::WrongFees(paid_fees, computed_fees))
     } else if computed_fees < protocol_params.max_tx_size{
         err_result(ValidationError::FeesBelowMin)
     } else {
@@ -198,8 +199,12 @@ fn check_fees(
 }
 
 // The transaction size does not exceed the maximum size allowed by the protocol.
-fn check_size(_tx: &AnnotatedTx, _protocol_params: &ProtocolParams) -> ValidationResult {
-    Ok(())
+fn check_size(atx: &AnnotatedTx, protocol_params: &ProtocolParams) -> ValidationResult {
+    if atx.tx_size > protocol_params.max_tx_size {
+        err_result(ValidationError::MaxTxSizeExceeded(atx.tx_size, protocol_params.max_tx_size))
+    } else {
+        Ok(())
+    }
 }
 
 // The expected witnessses have signed the transaction.

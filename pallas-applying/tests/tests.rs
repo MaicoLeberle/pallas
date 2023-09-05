@@ -29,7 +29,7 @@ mod tests {
     // Therefore, the expected fees are 7 + 11 * 82 = 909 lovelace, which is why the output contains
     // 100000 - 909 = 99091 lovelace.
     fn successful_case() {
-        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 0);
+        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 100);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
         let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
@@ -52,7 +52,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) => (),
                     Err(err) => assert!(false, "ERROR: {:?}", err),
                 }
@@ -73,7 +73,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) => assert!(false, "Inputs set cannot be empty."),
                     Err(err) => match err {
                         ValidationError::TxInsEmpty => (),
@@ -106,7 +106,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) => assert!(false, "Outputs set cannot be empty."),
                     Err(err) => match err {
                         ValidationError::TxOutsEmpty => (),
@@ -137,7 +137,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) => assert!(false, "Input must be in the set of UTxOs."),
                     Err(err) => match err {
                         ValidationError::InputNotUTxO => (),
@@ -174,7 +174,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) =>
                         assert!(false, "All outputs must have a non-zero number of lovelaces."),
                     Err(err) => match err {
@@ -225,11 +225,11 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) =>
                         assert!(false, "All outputs must have a non-zero number of lovelaces."),
                     Err(err) => match err {
-                        ValidationError::WrongFees => (),
+                        ValidationError::WrongFees(_, _) => (),
                         wrong_error =>
                             assert!(false, "Wrong error type (wrong_fees - {:?}).", wrong_error),
                     }
@@ -266,7 +266,7 @@ mod tests {
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, protocol_params) {
+                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) =>
                         assert!(false, "All outputs must have a non-zero number of lovelaces."),
                     Err(err) => match err {
@@ -278,6 +278,51 @@ mod tests {
                                        ),
                     }
                 }
+        }
+    }
+
+    #[test]
+    // Note that the transaction size is 82, like in some of the previous examples. Since the
+    // maximum transaction size allowed by the protocol is 81, then this raises the excepted error.
+    fn max_tx_size_exceeded() {
+        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 81);
+        let mut tx_ins: TxIns = new_tx_ins();
+        let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        insert_tx_in(&mut tx_ins, &tx_in);
+        let mut tx_outs: TxOuts = new_tx_outs();
+        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99091);
+        insert_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = mk_transaction(
+            tx_ins,
+            tx_outs,
+            new_attributes()
+        );
+        let tx_wits: Witnesses = new_witnesses();
+        let mut utxos: UTxOs = new_utxos();
+        insert_utxo(
+            &mut utxos,
+            &tx_in,
+            input_tx_out
+        );
+        match annotate_tx(&tx) {
+            None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
+            Some(atx) => match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
+                Ok(_) => assert!(
+                            false,
+                            "Maximum tx size cannot be exceeded: {} / {}.",
+                            atx.tx_size,
+                            protocol_params.max_tx_size
+                         ),
+                Err(err) => match err {
+                    ValidationError::MaxTxSizeExceeded(_, _) => (),
+                    wrong_error => assert!(
+                                        false,
+                                        "Wrong error type (fees_below_minimum - {:?}).",
+                                        wrong_error
+                                   ),
+                }
+            }
         }
     }
 }
