@@ -9,9 +9,20 @@ use pallas_applying::{
     ValidationError,
     UTxOs
 };
-use pallas_codec::{minicbor::bytes::ByteVec, utils::{CborWrap, EmptyMap, MaybeIndefArray, TagWrap}};
+use pallas_codec::{
+    minicbor::bytes::ByteVec,
+    utils::{CborWrap, EmptyMap, MaybeIndefArray, TagWrap}
+};
 use pallas_crypto::hash::Hash;
-use pallas_primitives::byron::{Address, Attributes, Twit, Tx, TxId, TxIn, TxOut};
+use pallas_primitives::byron::{
+    Address,
+    Attributes,
+    Twit,
+    Tx,
+    TxId,
+    TxIn,
+    TxOut
+};
 
 
 #[cfg(test)]
@@ -22,53 +33,42 @@ mod tests {
     // Note that:
     //      i)   the transaction input contains 100000 lovelace, 
     //      ii)  the minimum_fee_constant protocol parameter is 7,
-    //      iii) the minimum_fee_factor protocol parameter is 11,
-    //      iv)  the size of the transaction is 82 bytes
-    //              (since ann_tx == pallas_applying::AnnotatedTx {tx: tx, tx_size: 82}),
-    //
-    // Therefore, the expected fees are 7 + 11 * 82 = 909 lovelace, which is why the output contains
+    //      iii) the minimum_fee_factor protocol parameter is 11, and
+    //      iv)  the size of the transaction is 82 bytes (it is easy to verify that
+    //             atx == pallas_applying::AnnotatedTx {tx: tx, tx_size: 82}).
+    // The expected fees are therefore 7 + 11 * 82 = 909 lovelace, which is why the output contains
     // 100000 - 909 = 99091 lovelace.
     fn successful_case() {
         let protocol_params: ProtocolParams = new_protocol_params(7, 11, 100);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99091);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            input_tx_out
-        );
+        // Note that input_tx_out is the TxOut associated with tx_in.
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
+        
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
                 match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
                     Ok(_) => (),
-                    Err(err) => assert!(false, "ERROR: {:?}", err),
+                    Err(err) => assert!(false, "Unexpected error (sucessful_case - {:?}).", err),
                 }
         }
     }
 
     #[test]
     fn empty_ins() {
-        let tx: Tx = mk_transaction(
-            new_tx_ins(),
-            new_tx_outs(),
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
-        let utxos: UTxOs = new_utxos();
         let protocol_params: ProtocolParams = new_protocol_params(0, 0, 0);
+        let tx: Tx = new_tx(new_tx_ins(), new_tx_outs(), new_attributes());
+        let utxos: UTxOs = new_utxos();
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
@@ -77,8 +77,7 @@ mod tests {
                     Ok(_) => assert!(false, "Inputs set cannot be empty."),
                     Err(err) => match err {
                         ValidationError::TxInsEmpty => (),
-                        wrong_error =>
-                            assert!(false, "Wrong error type (empty_ins - {:?}).", wrong_error),
+                        wet => assert!(false, "Wrong error type (empty_ins - {:?}).", wet),
                     }
                 }
         }
@@ -89,19 +88,12 @@ mod tests {
         let protocol_params: ProtocolParams = new_protocol_params(0, 0, 0);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
-        insert_tx_in(&mut tx_ins, &tx_in);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            new_tx_outs(),
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_in(&mut tx_ins, &tx_in);
+        let tx: Tx = new_tx( tx_ins, new_tx_outs(), new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            new_tx_out(new_address(random_address_payload(), 0), 1000)
-        );
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
@@ -110,8 +102,7 @@ mod tests {
                     Ok(_) => assert!(false, "Outputs set cannot be empty."),
                     Err(err) => match err {
                         ValidationError::TxOutsEmpty => (),
-                        wrong_error =>
-                            assert!(false, "Wrong error type (empty_outs - {:?}).", wrong_error),
+                        wet => assert!(false, "Wrong error type (empty_outs - {:?}).", wet),
                     }
                 }
         }
@@ -122,17 +113,13 @@ mod tests {
         let protocol_params: ProtocolParams = new_protocol_params(0, 0, 0);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 1000);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let utxos: UTxOs = new_utxos();
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
@@ -141,8 +128,7 @@ mod tests {
                     Ok(_) => assert!(false, "Input must be in the set of UTxOs."),
                     Err(err) => match err {
                         ValidationError::InputNotUTxO => (),
-                        wrong_error =>
-                            assert!(false, "Wrong error type (unfound_utxo - {:?}).", wrong_error),
+                        wet => assert!(false, "Wrong error type (unfound_utxo - {:?}).", wet),
                     }
                 }
         }
@@ -153,23 +139,15 @@ mod tests {
         let protocol_params: ProtocolParams = new_protocol_params(0, 0, 0);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 0);
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 0);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            input_tx_out
-        );
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
@@ -179,59 +157,38 @@ mod tests {
                         assert!(false, "All outputs must have a non-zero number of lovelaces."),
                     Err(err) => match err {
                         ValidationError::OutputWithoutLovelace => (),
-                        wrong_error => assert!(
-                                            false,
-                                            "Wrong error type (no_lovelace_in_output - {:?}).",
-                                            wrong_error
-                                       ),
+                        wet =>
+                            assert!(false, "Wrong error type (no_lovelace_in_output - {:?}).", wet),
                     }
                 }
         }
     }
 
     #[test]
-    // Note that:
-    //      i)   the transaction input contains 100000 lovelace, 
-    //      ii)  the minimum_fee_constant protocol parameter is 7,
-    //      iii) the minimum_fee_factor protocol parameter is 11,
-    //      iv)  the size of the transaction is 82 bytes
-    //              (since ann_tx == pallas_applying::AnnotatedTx {tx: tx, tx_size: 82}),
-    //
-    // Therefore, the expected fees are 7 + 11 * 82 = 909 lovelace. The output has one more lovelace
-    // than expected, which means fees are lower than expected by 1 lovelace. This raises the
-    // expected error.
+    // The case is identical to successful_case in all aspects except for the fact that the output
+    // of the transaction has one more lovelace than expected.
     fn wrong_fees() {
         let protocol_params: ProtocolParams = new_protocol_params(7, 11, 0);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99092);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            input_tx_out
-        );
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
                 match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
-                    Ok(_) =>
-                        assert!(false, "All outputs must have a non-zero number of lovelaces."),
+                    Ok(_) => assert!(false, "Incorrect fees."),
                     Err(err) => match err {
                         ValidationError::WrongFees(_, _) => (),
-                        wrong_error =>
-                            assert!(false, "Wrong error type (wrong_fees - {:?}).", wrong_error),
+                        wet => assert!(false, "Wrong error type (wrong_fees - {:?}).", wet),
                     }
                 }
         }
@@ -239,29 +196,20 @@ mod tests {
 
     #[test]
     // Unlike in the wrong_fees test case, the fees of this transaction are correct. Nonetheless,
-    // such a low number of lovelace fees is disallowed by the protocol parameters, and so the
-    // expected error should be raised.
+    // their too low compared to the related protocol parameter.
     fn fees_below_minimum() {
         let protocol_params: ProtocolParams = new_protocol_params(7, 11, 1000);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99091);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            input_tx_out
-        );
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
 
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
@@ -271,40 +219,28 @@ mod tests {
                         assert!(false, "All outputs must have a non-zero number of lovelaces."),
                     Err(err) => match err {
                         ValidationError::FeesBelowMin => (),
-                        wrong_error => assert!(
-                                            false,
-                                            "Wrong error type (fees_below_minimum - {:?}).",
-                                            wrong_error
-                                       ),
+                        wet => assert!(false, "Wrong error type (fees_below_minimum - {:?}).", wet),
                     }
                 }
         }
     }
 
     #[test]
-    // Note that the transaction size is 82, like in some of the previous examples. Since the
-    // maximum transaction size allowed by the protocol is 81, then this raises the excepted error.
+    // The transaction size is 82, but the maximum transaction size allowed by the protocol is 81.
     fn max_tx_size_exceeded() {
         let protocol_params: ProtocolParams = new_protocol_params(7, 11, 81);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        insert_tx_in(&mut tx_ins, &tx_in);
+        add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
         let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99091);
-        insert_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = mk_transaction(
-            tx_ins,
-            tx_outs,
-            new_attributes()
-        );
-        let tx_wits: Witnesses = new_witnesses();
+        add_tx_out(&mut tx_outs, &tx_out);
+        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
-        insert_utxo(
-            &mut utxos,
-            &tx_in,
-            input_tx_out
-        );
+        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
+        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
+        let tx_wits: Witnesses = new_witnesses();
+
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) => match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
@@ -316,11 +252,7 @@ mod tests {
                          ),
                 Err(err) => match err {
                     ValidationError::MaxTxSizeExceeded(_, _) => (),
-                    wrong_error => assert!(
-                                        false,
-                                        "Wrong error type (fees_below_minimum - {:?}).",
-                                        wrong_error
-                                   ),
+                    wet => assert!(false, "Wrong error type (fees_below_minimum - {:?}).", wet),
                 }
             }
         }
@@ -350,7 +282,7 @@ fn new_tx_in(tx_id: TxId, index: u32) -> TxIn {
     TxIn::Variant0(CborWrap((tx_id, index)))
 }
 
-fn insert_tx_in(ins: &mut TxIns, new_in: &TxIn) {
+fn add_tx_in(ins: &mut TxIns, new_in: &TxIn) {
     match ins {
         MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_in.clone())
     }
@@ -383,13 +315,13 @@ fn new_tx_out(address: Address, amount: u64) -> TxOut {
     }
 }
 
-fn insert_tx_out(outs: &mut TxOuts, new_out: &TxOut) {
+fn add_tx_out(outs: &mut TxOuts, new_out: &TxOut) {
     match outs {
         MaybeIndefArray::Def(vec) | MaybeIndefArray::Indef(vec) => vec.push(new_out.clone())
     }
 }
 
-fn insert_utxo(utxos: &mut UTxOs, tx_in: &TxIn, tx_out: TxOut) -> Option<TxOut> {
+fn add_to_utxo(utxos: &mut UTxOs, tx_in: &TxIn, tx_out: TxOut) -> Option<TxOut> {
     match to_utxo_tx_in(tx_in) {
         Some(utxo_tx_in) => utxos.insert(utxo_tx_in, tx_out),
         None => None
@@ -400,7 +332,7 @@ fn new_attributes() -> Attributes {
     EmptyMap
 }
 
-fn mk_transaction(ins: TxIns, outs: TxOuts, attrs: Attributes) -> Tx {
+fn new_tx(ins: TxIns, outs: TxOuts, attrs: Attributes) -> Tx {
     Tx {
         inputs: ins,
         outputs: outs,
