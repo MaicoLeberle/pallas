@@ -52,7 +52,7 @@ mod tests {
         let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
         add_to_utxo(&mut utxos, &tx_in, input_tx_out);
         let tx_wits: Witnesses = new_witnesses();
-        
+
         match annotate_tx(&tx) {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
@@ -165,45 +165,15 @@ mod tests {
     }
 
     #[test]
-    // The case is identical to successful_case in all aspects except for the fact that the output
-    // of the transaction has one more lovelace than expected.
-    fn wrong_fees() {
-        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 0);
-        let mut tx_ins: TxIns = new_tx_ins();
-        let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
-        add_tx_in(&mut tx_ins, &tx_in);
-        let mut tx_outs: TxOuts = new_tx_outs();
-        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99092);
-        add_tx_out(&mut tx_outs, &tx_out);
-        let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
-        let mut utxos: UTxOs = new_utxos();
-        let input_tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 100000);
-        add_to_utxo(&mut utxos, &tx_in, input_tx_out);
-        let tx_wits: Witnesses = new_witnesses();
-
-        match annotate_tx(&tx) {
-            None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
-            Some(atx) =>
-                match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
-                    Ok(_) => assert!(false, "Incorrect fees."),
-                    Err(err) => match err {
-                        ValidationError::WrongFees(_, _) => (),
-                        wet => assert!(false, "Wrong error type (wrong_fees - {:?}).", wet),
-                    }
-                }
-        }
-    }
-
-    #[test]
-    // Unlike in the wrong_fees test case, the fees of this transaction are correct. Nonetheless,
-    // their too low compared to the related protocol parameter.
+    // The fees of this transaction are too low (100000 - 99900 = 100) compared to the minimum
+    // allowed by the protocol (101).
     fn fees_below_minimum() {
-        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 1000);
+        let protocol_params: ProtocolParams = new_protocol_params(7, 11, 101);
         let mut tx_ins: TxIns = new_tx_ins();
         let tx_in: TxIn = new_tx_in(random_tx_id(), 3);
         add_tx_in(&mut tx_ins, &tx_in);
         let mut tx_outs: TxOuts = new_tx_outs();
-        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99091);
+        let tx_out: TxOut = new_tx_out(new_address(random_address_payload(), 0), 99900);
         add_tx_out(&mut tx_outs, &tx_out);
         let tx: Tx = new_tx(tx_ins, tx_outs, new_attributes());
         let mut utxos: UTxOs = new_utxos();
@@ -215,8 +185,7 @@ mod tests {
             None => assert!(false, "TxSizeUnavailable (sucessful_case)."),
             Some(atx) =>
                 match validate_byron_tx(&atx, &tx_wits, &utxos, &protocol_params) {
-                    Ok(_) =>
-                        assert!(false, "All outputs must have a non-zero number of lovelaces."),
+                    Ok(_) => assert!(false, "Fees are below minimum."),
                     Err(err) => match err {
                         ValidationError::FeesBelowMin => (),
                         wet => assert!(false, "Wrong error type (fees_below_minimum - {:?}).", wet),

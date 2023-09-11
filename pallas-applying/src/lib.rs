@@ -35,7 +35,6 @@ pub enum ValidationError {
     InputNotUTxO,
     IllFormedInput,
     OutputWithoutLovelace,
-    WrongFees(u64, u64),
     FeesBelowMin,
     MaxTxSizeExceeded(u64, u64),
 }
@@ -186,12 +185,10 @@ fn check_fees(
         output_balance += tx_out.amount;
     }
     let paid_fees: u64 = input_balance - output_balance;
-    let computed_fees: u64 =
+    let min_fees: u64 =
         protocol_params.minimum_fee_constant + protocol_params.minimum_fee_factor * atx.tx_size;
 
-    if paid_fees != computed_fees {
-        err_result(ValidationError::WrongFees(paid_fees, computed_fees))
-    } else if computed_fees < protocol_params.max_tx_size{
+    if paid_fees < min_fees {
         err_result(ValidationError::FeesBelowMin)
     } else {
         Ok(())
