@@ -86,15 +86,14 @@ pub fn annotate_tx(tx: &Tx) -> Option<AnnotatedTx>{
 
 pub fn validate(
     metx: &MultiEraTx,
-    witnesses: &Witnesses,
     utxos: &UTxOs,
     prot_params: ProtocolParams
 ) -> ValidationResult {
     match metx {
         Byron(mtxp) => {
-            match annotate_tx(&*(mtxp.transaction)) {
+            match annotate_tx(&*mtxp.transaction) {
                 None => err_result(ValidationError::TxSizeUnavailable),
-                Some(atx) => validate_byron_tx(&atx, witnesses, utxos, &prot_params)
+                Some(atx) => validate_byron_tx(&atx, &*mtxp.witness, utxos, &prot_params)
             }
         },
         AlonzoCompatible(_, _) => err_result(
